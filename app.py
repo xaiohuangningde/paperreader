@@ -9,12 +9,16 @@ import json
 from datetime import datetime
 import base64
 import re
+from PIL import Image
 
 # 导入自定义工具模块
 try:
     from utils.pdf_processor import PDFProcessor
     from utils.ai_extractor import AIExtractor
     from utils.formatter import ResultFormatter
+    from utils.report_generator import WordReportGenerator
+    from utils.image_cropper import ImageCropper
+    from utils.structured_extractor import StructuredExtractor
 except ImportError as e:
     st.error(f"导入自定义模块失败: {str(e)}")
     st.stop()
@@ -102,21 +106,33 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 初始化Session State
-if 'pdf_processor' not in st.session_state:
-    st.session_state.pdf_processor = PDFProcessor()
-if 'ai_extractor' not in st.session_state:
-    st.session_state.ai_extractor = AIExtractor()
-if 'formatter' not in st.session_state:
-    st.session_state.formatter = ResultFormatter()
-if 'extraction_result' not in st.session_state:
-    st.session_state.extraction_result = None
-if 'uploaded_file' not in st.session_state:
-    st.session_state.uploaded_file = None
-if 'comments' not in st.session_state:
-    st.session_state.comments = {}
+def init_session_state():
+    if 'pdf_processor' not in st.session_state:
+        st.session_state.pdf_processor = PDFProcessor()
+    if 'ai_extractor' not in st.session_state:
+        st.session_state.ai_extractor = AIExtractor()
+    if 'structured_extractor' not in st.session_state:
+        st.session_state.structured_extractor = StructuredExtractor()
+    if 'formatter' not in st.session_state:
+        st.session_state.formatter = ResultFormatter()
+    if 'extraction_result' not in st.session_state:
+        st.session_state.extraction_result = None
+    if 'structured_data' not in st.session_state:
+        st.session_state.structured_data = None
+    if 'uploaded_file' not in st.session_state:
+        st.session_state.uploaded_file = None
+    if 'comments' not in st.session_state:
+        st.session_state.comments = {}
+    if 'analyzed_papers' not in st.session_state:
+        st.session_state.analyzed_papers = []
+    if 'cropped_images' not in st.session_state:
+        st.session_state.cropped_images = []
+
+# 初始化Session State
+init_session_state()
 
 # 主标题
-st.markdown('<h1 class="main-header">DeepSpec: SPE Paper Scrutinizer 🕵️‍♂️</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">DeepSpec Pro: SPE Paper Scrutinizer 🚀</h1>', unsafe_allow_html=True)
 st.markdown("---")
 
 # --- Sidebar: 上传与设置 ---
@@ -152,6 +168,10 @@ with st.sidebar:
     st.header("4. 操作")
     start_btn = st.button("开始深度提取", disabled=(uploaded_file is None or not api_key))
     export_btn = st.button("导出结果到Excel", disabled=(st.session_state.extraction_result is None))
+    
+    # Word报告导出按钮
+    if st.session_state.analyzed_papers and st.button("📥 生成 Word 报告"):
+        generate_word_report()
 
 # 模拟数据 (Mock Data) - 在真实开发中，这里会调用 OpenAI API
 def get_mock_extraction_result():
@@ -389,6 +409,46 @@ if export_btn and st.session_state.extraction_result:
             mime="text/csv"
         )
 
+# --- Word文档生成函数 ---
+def generate_word_report():
+    """生成Word文档"""
+    if not st.session_state.analyzed_papers:
+        st.error("没有可导出的论文")
+        return
+    
+    with st.spinner("正在生成Word文档..."):
+        try:
+            # 创建Word报告生成器
+            report_gen = WordReportGenerator()
+            
+            # 添加每篇论文的分析
+            for paper in st.session_state.analyzed_papers:
+                image_stream = None
+                if 'image' in paper and paper['image']:
+                    # 将PIL图像转换为字节流
+                    img_buffer = BytesIO()
+                    paper['image'].save(img_buffer, format='PNG')
+                    img_buffer.seek(0)
+                    image_stream = img_buffer
+                
+                report_gen.add_paper_analysis(paper, image_stream=image_stream)
+            
+            # 保存到字节流
+            buffer = report_gen.save_to_bytes()
+            
+            # 提供下载按钮
+            st.download_button(
+                label="📥 下载 Word 报告",
+                data=buffer,
+                file_name=f"SPE_Literature_Review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+            st.success("✅ Word 报告生成成功！")
+            
+        except Exception as e:
+            st.error(f"生成Word文档时出错: {str(e)}")
+
 # 底部信息
 st.markdown("---")
-st.markdown("© 2023 DeepSpec: SPE Paper Scrutinizer - 为石油工程师打造的专业文献分析工具")
+st.markdown("© 2023 DeepSpec Pro: SPE Paper Scrutinizer - 为石油工程师打造的专业文献分析工具")
